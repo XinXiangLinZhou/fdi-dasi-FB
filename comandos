@@ -1,0 +1,32 @@
+-Comando Github
+  1. Iniciar sesión
+    gh auth login
+  2. Clonar
+    gh repo clone XinXiangLinZhou/fdi-dasi-bunny
+  3. Actualizar repositorio
+    git pull
+  4. editar código
+    git add .
+  5. commit
+    git commit -m "commit"
+  6. subir codigo
+    git push
+  7. Logout
+    gh auth logout
+
+
+-uv
+  1. Crear proyecto
+    uv init
+  2. instalar un paquete
+    uv add
+
+-ollama
+  1. Descargar Ollama
+    wget https://ollama.com/download/ollama-linux-amd64.tar.zst
+  2. Ejecutar el servidor de Ollama
+    bin/ollama serve
+  3. Descargar modelo
+    bin/ollama pull ministral-3:8B
+  4. Ejecutar un modelo
+    bin/ollama run ministral-3:8B
