@@ -1,5 +1,4 @@
 # Comunicación con el servidor del profesor (API central)
-# Comunicación con el servidor del profesor (API central)
 from app.config import SERVER_URL, MY_ALIAS, logger
 import httpx
 
@@ -7,9 +6,7 @@ client = httpx.AsyncClient(timeout=5.0)
 # Función: registra el alias del agente en el servidor si aún no existe
 async def postName():
     try:
-        gente = await getGente()
-        if gente.get(MY_ALIAS) is None:
-            await client.post(f"{SERVER_URL}alias/{MY_ALIAS}")
+        await client.post(f"{SERVER_URL}alias/{MY_ALIAS}")
     except Exception as e:
         logger.error(f"Error en postName: {e}")
 
@@ -57,7 +54,7 @@ async def postObject(ip, obj):
 
     try:
         r = await client.post(
-            f"{SERVER_URL}objeto/{alias}",
+            f"{SERVER_URL}paquete/{alias}",
             json=obj
         )
         return r.json()

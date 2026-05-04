@@ -7,11 +7,10 @@ from services.server_api import postName, getGente
 from services.monitor import loop
 
 async def start():
+    await asyncio.sleep(0.5)
     # Registrar el nombre del agente en el servidor central
     await postName()
-
     # Obtener la lista de agentes y sus IPs
-    await asyncio.sleep(0.5)
     gente = await getGente()
 
     # Determinar la IP propia usando el alias
@@ -25,6 +24,7 @@ async def start():
     config = uvicorn.Config(app, host="0.0.0.0", port=7720)
     server = uvicorn.Server(config)
     await server.serve()
+
 
 # Función principal: inicia el agente, registra el nombre en el servidor,
 # obtiene su IP y lanza tanto el monitor como el servidor web

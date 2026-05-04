@@ -9,7 +9,6 @@ from app.state import (
     chat_status,
     post_objects,
     lock,
-    conversation_last_activity,
 )
 from services.server_api import getGente
 from services.ollama_agent import (
@@ -58,14 +57,13 @@ async def check_inactive_ips():
 
     async with lock:
         for ip in list_ip:
-            last = conversation_last_activity.get(ip)
+            last = ip_time.get(ip)
+
 
             if last is None:
                 list_ping.add(ip)
-                continue
-
-            if chat_status.get(ip, "chatting") == "chatting":
-                if now - last > NEGOTIATION_TIMEOUT:
+            elif now - last > PING_TIME:
+                if chat_status.get(ip, "chatting") == "chatting":
                     list_ping.add(ip)
 
 
@@ -97,25 +95,6 @@ async def iniciar_chat_si_hace_falta(ip: str):
                 await add_history(ip, "assistant", mensaje_final)
                 await ping(ip, {"msg": mensaje_final})
         return
-
-    # Si ya hubo conversación pero no se ha respondido en un tiempo, enviar un mensaje de seguimiento
-    now = time.time()
-    STALL_TIMEOUT = PING_TIME * 2
-    last_activity = conversation_last_activity.get(ip)
-
-    if last_activity is None:
-        last_activity = now
-
-    if now - last_activity > STALL_TIMEOUT:
-
-        msg = "¿Sigues interesado en el intercambio?"
-
-        await add_history(ip, "assistant", msg)
-        await ping(ip, {"msg": msg})
-
-        # Actualizar la última actividad para evitar enviar mensajes de seguimiento repetidos
-        async with lock:
-            conversation_last_activity[ip] = now
 
 
 # Bucle principal: mantiene actualizado el estado de los agentes y lanza chats cuando hace falta

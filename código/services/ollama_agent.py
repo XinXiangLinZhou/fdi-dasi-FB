@@ -3,7 +3,7 @@ import re
 from time import time
 import httpx
 from app.config import OLLAMA_URL, OLLAMA_MODEL, MY_ALIAS, MAX_HISTORY, logger
-from app.state import chat_history, chat_status, post_objects, lock, conversation_last_activity
+from app.state import chat_history, chat_status, post_objects, lock
 from services.server_api import getInfo, getGenteAlias, postObject
 
 TOOLS = [
@@ -254,15 +254,15 @@ async def generar_respuesta_ollama(ip: str) -> dict:
 
     ultimo_msg_otro = obtener_ultimo_mensaje_del_otro(history)
     propuesta_otro = extraer_propuesta_del_otro(ultimo_msg_otro)
-
+    logger.info(f"=======================")
     logger.info(f"Recursos: {recursos}")
     logger.info(f"Objetivo: {objetivo}")
     logger.info(f"Faltantes: {faltantes}")
     logger.info(f"Ofrecibles: {ofrecibles}")
     logger.info(f"Intercambios validos: {intercambios_validos}")
+    logger.info(f"=======================")
     logger.info(f"Ultimo mensaje otro: {ultimo_msg_otro}")
     logger.info(f"Propuesta otro: {propuesta_otro}")
-
     # Caso 1: hay propuesta clara del otro jugador
     if propuesta_otro:
         system_prompt = build_prompt_response(
@@ -515,7 +515,6 @@ async def ensure_chat(ip: str):
 async def add_history(ip: str, role: str, text: str):
     await ensure_chat(ip)
     async with lock:
-        conversation_last_activity[ip] = time.time()
         chat_history[ip].append({
             "role": role,
             "content": text
