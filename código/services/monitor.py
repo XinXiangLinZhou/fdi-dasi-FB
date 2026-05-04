@@ -1,6 +1,6 @@
 import time
-
-from app.config import MY_ALIAS, PING_TIME, SLEEP_TIME
+import asyncio
+from app.config import MY_ALIAS, PING_TIME, SLEEP_TIME, logger
 from app.state import (
     ip_time,
     list_ip,
@@ -9,6 +9,7 @@ from app.state import (
     chat_status,
     post_objects,
     lock,
+    conversation_last_activity,
 )
 from services.server_api import getGente
 from services.ollama_agent import (
@@ -21,16 +22,16 @@ from services.peer_api import ping
 
 
 # Función: actualiza la lista de IPs activas a partir de la información del servidor
-def update_ip():
+async def update_ip():
     try:
-        gente = getGente()
+        gente = await getGente()
 
         new_ips = {
             ip for alias, ip in gente.items()
             if alias != MY_ALIAS
         }
 
-        with lock:
+        async with lock:
             list_ip.clear()
             list_ip.update(new_ips)
 
@@ -47,29 +48,32 @@ def update_ip():
                 post_objects.pop(ip, None)
 
     except Exception as e:
-        print("Error updating IP list:", e)
+        logger.error(f"Error actualizando IP list: {e}")
 
 
 # Función: detecta agentes inactivos y los marca para volver a comprobar conexión
-def check_inactive_ips():
+async def check_inactive_ips():
     now = time.time()
+    NEGOTIATION_TIMEOUT = PING_TIME * 2
 
-    with lock:
+    async with lock:
         for ip in list_ip:
-            last = ip_time.get(ip)
+            last = conversation_last_activity.get(ip)
 
             if last is None:
                 list_ping.add(ip)
-            elif now - last > PING_TIME:
-                if chat_status.get(ip, "chatting") == "chatting":
+                continue
+
+            if chat_status.get(ip, "chatting") == "chatting":
+                if now - last > NEGOTIATION_TIMEOUT:
                     list_ping.add(ip)
 
 
 # Función: inicia una conversación solo si todavía no existe historial con ese agente
-def iniciar_chat_si_hace_falta(ip: str):
-    ensure_chat(ip)
+async def iniciar_chat_si_hace_falta(ip: str):
+    await ensure_chat(ip)
 
-    with lock:
+    async with lock:
         status = chat_status.get(ip, "chatting")
         history_len = len(chat_history.get(ip, []))
 
@@ -78,37 +82,57 @@ def iniciar_chat_si_hace_falta(ip: str):
 
     # Solo se envía el primer mensaje si todavía no hubo conversación
     if history_len == 0:
-        respuesta = generar_respuesta_ollama(ip)
+        respuesta = await generar_respuesta_ollama(ip)
 
         if respuesta["type"] == "text":
             primer_mensaje = respuesta["content"]
-            add_history(ip, "assistant", primer_mensaje)
-            ping(ip, {"msg": primer_mensaje})
+            await add_history(ip, "assistant", primer_mensaje)
+            await ping(ip, {"msg": primer_mensaje})
 
         elif respuesta["type"] == "tool_call":
             tool_calls = respuesta["tool_calls"]
             if tool_calls:
-                tool_result = ejecutar_tool_call(ip, tool_calls[0])
+                tool_result = await ejecutar_tool_call(ip, tool_calls[0])
                 mensaje_final = tool_result["message"]
-                add_history(ip, "assistant", mensaje_final)
-                ping(ip, {"msg": mensaje_final})
+                await add_history(ip, "assistant", mensaje_final)
+                await ping(ip, {"msg": mensaje_final})
+        return
+
+    # Si ya hubo conversación pero no se ha respondido en un tiempo, enviar un mensaje de seguimiento
+    now = time.time()
+    STALL_TIMEOUT = PING_TIME * 2
+    last_activity = conversation_last_activity.get(ip)
+
+    if last_activity is None:
+        last_activity = now
+
+    if now - last_activity > STALL_TIMEOUT:
+
+        msg = "¿Sigues interesado en el intercambio?"
+
+        await add_history(ip, "assistant", msg)
+        await ping(ip, {"msg": msg})
+
+        # Actualizar la última actividad para evitar enviar mensajes de seguimiento repetidos
+        async with lock:
+            conversation_last_activity[ip] = now
 
 
 # Bucle principal: mantiene actualizado el estado de los agentes y lanza chats cuando hace falta
-def loop():
+async def loop():
     while True:
         try:
-            update_ip()
-            check_inactive_ips()
+            await update_ip()
+            await check_inactive_ips()
 
-            with lock:
+            async with lock:
                 current_ping_list = list(list_ping)
 
-            for ip in current_ping_list:
-                print(f"Iniciar o reanudar chat con {ip}")
-                iniciar_chat_si_hace_falta(ip)
-
+            if current_ping_list:
+                async with asyncio.TaskGroup() as tg:
+                    for ip in current_ping_list:
+                        tg.create_task(iniciar_chat_si_hace_falta(ip))
         except Exception as e:
-            print("Loop error:", e)
+            logger.error(f"Error en el bucle: {e}")
 
-        time.sleep(SLEEP_TIME)
+        await asyncio.sleep(SLEEP_TIME)

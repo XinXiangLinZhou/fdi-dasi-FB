@@ -1,5 +1,5 @@
 # Estado global compartido entre diferentes módulos del sistema
-import threading
+import asyncio
 
 # Diccionario: guarda la última vez que cada IP respondió
 ip_time = {}
@@ -20,4 +20,4 @@ chat_status = {}
 post_objects = {}
 
 # Lock global: evita conflictos entre hilos al acceder a datos compartidos
-lock = threading.Lock()
+lock = asyncio.Lock()

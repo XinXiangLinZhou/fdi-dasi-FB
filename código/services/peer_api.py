@@ -1,28 +1,35 @@
 # Comunicación directa entre agentes (peer-to-peer)
-import requests
+import httpx
+import asyncio
 import time
-
-from app.config import MY_PORT
+from app.config import MY_PORT, logger
 from app.state import ip_time, list_ping, lock
 
 
 # Función: envía un mensaje (ping) a otro agente y actualiza su estado si responde
-def ping(ip: str, msg: dict, port: int = MY_PORT):
+async def ping(ip: str, msg: dict, port: int = MY_PORT):
     url = f"http://{ip}:{port}/buzon"
 
     try:
         # Enviar petición POST al buzón del otro agente
-        r = requests.post(url, json=msg, timeout=5)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            logger.debug(f"Intentando conectar al ip: {ip}...")
 
-        # Si responde correctamente, actualizar estado de conexión
-        if r.status_code == 200:
-            with lock:
-                ip_time[ip] = time.time()   # última vez que respondió
-                list_ping.discard(ip)       # quitar de la lista de pendientes
-            return r.json()
+            r = await client.post(url, json=msg)
 
-    except requests.exceptions.RequestException:
-        # Si falla la conexión, se ignora (el monitor lo gestionará)
-        pass
+            # Si responde correctamente, actualizar estado de conexión
+            if r.status_code == 200:
+                async with lock:
+                    ip_time[ip] = time.time()   # última vez que respondió
+                    list_ping.discard(ip)       # quitar de la lista de pendientes
+
+                logger.info(f"Conectado al ip: {ip}")
+                return r.json()
+
+            else:
+                logger.warning(f"Respuesta inesperada de {ip}: {r.status_code}")
+
+    except Exception as e:
+        logger.debug(f"No se pudo contactar con {ip}: {e}")
 
     return None

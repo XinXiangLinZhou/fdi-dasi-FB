@@ -1,5 +1,6 @@
 # Configuración global del sistema (valores por defecto y variables de entorno)
 import os
+import logging
 
 # ===== Configuración del servidor central =====
 # URL del servidor del profesor para registrar agentes y obtener información
@@ -24,3 +25,12 @@ MY_HOST = os.getenv("HOST", "127.0.0.1")
 SLEEP_TIME = int(os.getenv("SLEEP_TIME", "30"))
 PING_TIME = int(os.getenv("PING_TIME", "60"))
 MAX_HISTORY = int(os.getenv("MAX_HISTORY", "12"))
+
+# ===== Configuración de logging =====
+# Configuración básica del logging para mostrar información en consola
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(levelname)s] %(name)s: %(message)s'
+)
+logger = logging.getLogger("Agent")
+
