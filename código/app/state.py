@@ -21,3 +21,6 @@ post_objects = {}
 
 # Lock global: evita conflictos entre hilos al acceder a datos compartidos
 lock = asyncio.Lock()
+
+# Diccionario: última actividad de cada conversación (para limpieza de chats inactivos)
+conversation_last_activity = {}
