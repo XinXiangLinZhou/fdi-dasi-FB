@@ -3,7 +3,7 @@ import re
 from time import time
 import httpx
 from app.config import OLLAMA_URL, OLLAMA_MODEL, MY_ALIAS, MAX_HISTORY, logger
-from app.state import chat_history, chat_status, post_objects, retry_counts, lock
+from app.state import chat_history, chat_status, post_objects, lock
 from services.server_api import getInfo, getGenteAlias, postObject
 
 TOOLS = [
@@ -239,16 +239,6 @@ async def llamar_ollama(system_prompt: str, history: list, tools=None) -> dict:
         }
 
 async def generar_respuesta_ollama(ip: str) -> dict:
-    ensure_chat(ip)
-
-    if retry_counts.get(ip, 0) >= 3:
-        with lock:
-            chat_status[ip] = "inactive"
-
-        return {
-            "type": "text",
-            "content": "De acuerdo, dejo esta negociación."
-        }
     info = await getInfo()
     recursos = info.get("Recursos", {})
     objetivo = info.get("Objetivo", {})
@@ -514,32 +504,21 @@ def obtener_ultimo_mensaje_del_otro(history: list) -> str:
                 return content.strip()
     return ""
 
-def ensure_chat(ip: str):
-    with lock:
+async def ensure_chat(ip: str):
+    async with lock:
         if ip not in chat_history:
             chat_history[ip] = []
         if ip not in chat_status:
             chat_status[ip] = "chatting"
-        if ip not in retry_counts:
-            retry_counts[ip] = 0
 
 # Función: añade un mensaje al historial del chat y limita su tamaño
-def add_history(ip: str, role: str, text: str):
-    ensure_chat(ip)
-    with lock:
+async def add_history(ip: str, role: str, text: str):
+    await ensure_chat(ip)
+    async with lock:
         chat_history[ip].append({
             "role": role,
             "content": text
         })
-
-        # 如果是对方发来的消息，说明他回来了，追问次数清零
-        if role == "user":
-            retry_counts[ip] = 0
-
-        # 如果是我方 agent 发出去的消息，追问次数 +1
-        elif role == "assistant":
-            retry_counts[ip] += 1
-
         if len(chat_history[ip]) > MAX_HISTORY:
             chat_history[ip] = chat_history[ip][-MAX_HISTORY:]
 
@@ -556,9 +535,8 @@ async def get_history_length(ip: str) -> int:
         return len(chat_history.get(ip, []))
 
 # Función: limpia toda la información asociada a un chat
-def clear_chat(ip: str):
-    with lock:
+async def clear_chat(ip: str):
+    async with lock:
         chat_history.pop(ip, None)
         chat_status.pop(ip, None)
         post_objects.pop(ip, None)
-        retry_counts.pop(ip, None)
