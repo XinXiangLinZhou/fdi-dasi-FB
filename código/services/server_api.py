@@ -2,7 +2,7 @@
 from app.config import SERVER_URL, MY_ALIAS, logger
 import httpx
 
-client = httpx.AsyncClient(timeout=5.0)
+client = httpx.AsyncClient(timeout=10.0)
 # Función: registra el alias del agente en el servidor si aún no existe
 async def postName():
     try:
