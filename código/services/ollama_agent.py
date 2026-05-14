@@ -1,10 +1,13 @@
 import json
 import re
-from time import time
-import httpx
-from app.config import OLLAMA_URL, OLLAMA_MODEL, MY_ALIAS, MAX_HISTORY, logger
-from app.state import chat_history, chat_status, post_objects, lock
-from services.server_api import getInfo, getGenteAlias, postObject
+import requests
+####    TIME    ####
+import time
+####    FIN    ####
+
+from app.config import OLLAMA_URL, OLLAMA_MODEL, MY_ALIAS, MAX_HISTORY
+from app.state import chat_history, chat_status, post_objects, retry_counts, lock
+from services.server_api import getRecursos, getObjetivo, getGenteAlias, postObject
 
 TOOLS = [
     {
@@ -39,9 +42,8 @@ TOOLS = [
     }
 ]
 
-#Para generar una propuesta de intercambio cuando el agente inicia la conversación.
+# prompt A 主动发消息给别人
 def build_prompt_generate(my_alias, faltantes, ofrecibles, intercambios_validos):
-
     return f"""
 Eres {my_alias}, un jugador en un juego de intercambio.
 
@@ -73,7 +75,6 @@ EJEMPLO:
 "Puedo darte 1 madera por 1 piedra."
 """
 
-#Para decidir si aceptar, rechazar o contraofertar una propuesta recibida.
 def build_prompt_response(my_alias, propuesta_otro, intercambios_validos):
     return f"""
 Eres {my_alias}, un jugador en un juego de intercambio.
@@ -157,9 +158,9 @@ def generar_intercambios_validos(recursos: dict, objetivo: dict) -> list:
                     "receive": {recv_r: 1}
                 })
 
-    return intercambios
+    return intercambios   
 
-# Para limpiar y estandarizar los datos de intercambio recibidos
+# Función: limpia y normaliza el formato de un diccionario de intercambio
 def normalizar_trade_dict(d: dict) -> dict:
     limpio = {}
     if not isinstance(d, dict):
@@ -192,7 +193,7 @@ def es_trade_uno_a_uno(give: dict, receive: dict) -> bool:
 def generar_respuesta(ip: str) -> dict:
     return procesar_respuesta_agent(ip)
 
-async def llamar_ollama(system_prompt: str, history: list, tools=None) -> dict:
+def llamar_ollama(system_prompt: str, history: list, tools=None) -> dict:
     messages = [{"role": "system", "content": system_prompt}] + history
 
     data = {
@@ -206,10 +207,9 @@ async def llamar_ollama(system_prompt: str, history: list, tools=None) -> dict:
         data["tools"] = tools
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.post(OLLAMA_URL, json=data)
-        logger.info(f"Status Ollama: {r.status_code}")
-        logger.info(f"Respuesta cruda Ollama: {r.text}")
+        r = requests.post(OLLAMA_URL, json=data, timeout=60)
+        print("Status Ollama:", r.status_code)
+        print("Respuesta cruda Ollama:", r.text)
 
         r.raise_for_status()
         result = r.json()
@@ -232,37 +232,53 @@ async def llamar_ollama(system_prompt: str, history: list, tools=None) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"Ollama error: {e}")
+        print("Ollama error:", e)
         return {
             "type": "text",
             "content": "Tengo algunos recursos para intercambiar. ¿Qué necesitas?"
         }
 
-async def generar_respuesta_ollama(ip: str) -> dict:
-    info = await getInfo()
-    recursos = info.get("Recursos", {})
-    objetivo = info.get("Objetivo", {})
+def generar_respuesta_ollama(ip: str) -> dict:
+    ensure_chat(ip)
+
+    if retry_counts.get(ip, 0) >= 3:
+        with lock:
+            chat_status[ip] = "inactive"
+
+        return {
+            "type": "text",
+            "content": "De acuerdo, dejo esta negociación."
+        }
+
+    recursos = getRecursos() or {}
+    objetivo = getObjetivo() or {}
 
     faltantes = calcular_faltantes(recursos, objetivo)
     ofrecibles = calcular_ofrecibles(recursos, objetivo)
     intercambios_validos = generar_intercambios_validos(recursos, objetivo)
 
-    await ensure_chat(ip)
+    ensure_chat(ip)
 
-    async with lock:
+    with lock:
         history = list(chat_history[ip])
 
     ultimo_msg_otro = obtener_ultimo_mensaje_del_otro(history)
     propuesta_otro = extraer_propuesta_del_otro(ultimo_msg_otro)
-    logger.info(f"=======================")
-    logger.info(f"Recursos: {recursos}")
-    logger.info(f"Objetivo: {objetivo}")
-    logger.info(f"Faltantes: {faltantes}")
-    logger.info(f"Ofrecibles: {ofrecibles}")
-    logger.info(f"Intercambios validos: {intercambios_validos}")
-    logger.info(f"=======================")
-    logger.info(f"Ultimo mensaje otro: {ultimo_msg_otro}")
-    logger.info(f"Propuesta otro: {propuesta_otro}")
+    #### timer to response ####
+    if history and otro_esta_inactivo(history):
+    return {
+        "type": "text",
+        "content": "¿Sigues ahí? Todavía podemos hacer un intercambio."
+    }
+    ####    FIN    ####
+    print("Recursos:", recursos)
+    print("Objetivo:", objetivo)
+    print("Faltantes:", faltantes)
+    print("Ofrecibles:", ofrecibles)
+    print("Intercambios validos:", intercambios_validos)
+    print("Ultimo mensaje otro:", ultimo_msg_otro)
+    print("Propuesta otro:", propuesta_otro)
+
     # Caso 1: hay propuesta clara del otro jugador
     if propuesta_otro:
         system_prompt = build_prompt_response(
@@ -271,7 +287,7 @@ async def generar_respuesta_ollama(ip: str) -> dict:
             intercambios_validos
         )
 
-        return await llamar_ollama(
+        return llamar_ollama(
             system_prompt=system_prompt,
             history=history,
             tools=TOOLS
@@ -291,7 +307,7 @@ async def generar_respuesta_ollama(ip: str) -> dict:
         intercambios_validos
     )
 
-    return await llamar_ollama(
+    return llamar_ollama(
         system_prompt=system_prompt,
         history=history,
         tools=None
@@ -320,7 +336,7 @@ def propuesta_a_trade(propuesta_otro: dict):
 
     return normalizar_trade_dict(give), normalizar_trade_dict(receive)
 
-async def ejecutar_tool_call(ip: str, tool_call: dict) -> dict:
+def ejecutar_tool_call(ip: str, tool_call: dict) -> dict:
     fn = tool_call.get("function", {})
     name = fn.get("name")
 
@@ -348,9 +364,8 @@ async def ejecutar_tool_call(ip: str, tool_call: dict) -> dict:
     else:
         message = message.strip()
 
-    info = await getInfo()
-    recursos = info.get("Recursos", {})
-    objetivo = info.get("Objetivo", {})
+    recursos = getRecursos() or {}
+    objetivo = getObjetivo() or {}
 
     # Seguridad final: Ollama decide aceptar, pero Agent valida antes de ejecutar
     if not validar_trade(give, receive, recursos, objetivo):
@@ -360,7 +375,7 @@ async def ejecutar_tool_call(ip: str, tool_call: dict) -> dict:
             "trade": None
         }
 
-    async with lock:
+    with lock:
         post_objects[ip] = {
             "ip": ip,
             "give": give,
@@ -369,12 +384,12 @@ async def ejecutar_tool_call(ip: str, tool_call: dict) -> dict:
         chat_status[ip] = "success"
 
     try:
-        await postObject(ip, {
+        postObject(ip, {
             "give": give,
             "receive": receive
         })
     except Exception as e:
-        logger.error(f"postObject error: {e}")
+        print("postObject error:", e)
         return {
             "ok": False,
             "message": "Quería aceptar, pero hubo un error al enviar el intercambio.",
@@ -390,8 +405,8 @@ async def ejecutar_tool_call(ip: str, tool_call: dict) -> dict:
         }
     }
 
-async def procesar_respuesta_agent(ip: str) -> dict:
-    respuesta = await generar_respuesta_ollama(ip)
+def procesar_respuesta_agent(ip: str) -> dict:
+    respuesta = generar_respuesta_ollama(ip)
 
     if respuesta.get("type") == "tool_call":
         tool_calls = respuesta.get("tool_calls", [])
@@ -403,9 +418,9 @@ async def procesar_respuesta_agent(ip: str) -> dict:
                 "ok": False
             }
 
-        resultado = await ejecutar_tool_call(ip, tool_calls[0])
+        resultado = ejecutar_tool_call(ip, tool_calls[0])
 
-        await add_history(ip, "assistant", resultado["message"])
+        add_history(ip, "assistant", resultado["message"])
 
         return {
             "message": resultado["message"],
@@ -418,7 +433,7 @@ async def procesar_respuesta_agent(ip: str) -> dict:
     if not content:
         content = "¿Qué recursos tienes para intercambiar?"
 
-    await add_history(ip, "assistant", content)
+    add_history(ip, "assistant", content)
 
     return {
         "message": content,
@@ -436,27 +451,34 @@ def validar_trade(give: dict, receive: dict, recursos: dict, objetivo: dict):
     if not give or not receive:
         return False
 
+    # 1) 必须严格 1 换 1
     if not es_trade_uno_a_uno(give, receive):
         return False
 
     give_r, give_v = next(iter(give.items()))
     recv_r, recv_v = next(iter(receive.items()))
 
+    # 2) 先禁用 oro，避免模型拿黄金乱换
     if give_r == "oro" or recv_r == "oro":
         return False
 
+    # 3) 不能把自己需要的东西送出去
     if give_r in faltantes:
         return False
 
+    # 4) 送出去的必须真的是“可给的”
     if ofrecibles.get(give_r, 0) < give_v:
         return False
 
+    # 5) 收到的必须是自己缺的
     if recv_r not in faltantes:
         return False
 
+    # 6) 收到数量不能超过当前缺口（这里因为一换一，本质上就是必须为1）
     if faltantes.get(recv_r, 0) < recv_v:
         return False
 
+    # 7) 不允许同种资源互换同种资源
     if give_r == recv_r:
         return False
 
@@ -468,7 +490,7 @@ def extraer_propuesta_del_otro(texto: str) -> dict | None:
     - '1 tela por 1 vino'
     - 'te doy 1 tela por 1 vino'
     - '1 madera por 1 queso'
-
+    
     IMPORTANTE:
     Siempre se interpreta desde la perspectiva DEL OTRO jugador:
     '1 tela por 1 vino' = el otro te da tela y quiere vino.
@@ -477,7 +499,7 @@ def extraer_propuesta_del_otro(texto: str) -> dict | None:
     if not isinstance(texto, str):
         return None
 
-    t = texto.lower().strip() if texto else ""
+    t = texto.lower().strip()
 
     patron = r'(\d+)\s+([a-záéíóúñ]+)\s+por\s+(\d+)\s+([a-záéíóúñ]+)'
     m = re.search(patron, t)
@@ -504,39 +526,65 @@ def obtener_ultimo_mensaje_del_otro(history: list) -> str:
                 return content.strip()
     return ""
 
-async def ensure_chat(ip: str):
-    async with lock:
+def ensure_chat(ip: str):
+    with lock:
         if ip not in chat_history:
             chat_history[ip] = []
         if ip not in chat_status:
             chat_status[ip] = "chatting"
+        if ip not in retry_counts:
+            retry_counts[ip] = 0
 
 # Función: añade un mensaje al historial del chat y limita su tamaño
-async def add_history(ip: str, role: str, text: str):
-    await ensure_chat(ip)
-    async with lock:
+def add_history(ip: str, role: str, text: str):
+    ensure_chat(ip)
+    with lock:
         chat_history[ip].append({
             "role": role,
             "content": text
         })
+
+        # 如果是对方发来的消息，说明他回来了，追问次数清零
+        if role == "user":
+            retry_counts[ip] = 0
+
+        # 如果是我方 agent 发出去的消息，追问次数 +1
+        elif role == "assistant":
+            retry_counts[ip] += 1
+
         if len(chat_history[ip]) > MAX_HISTORY:
             chat_history[ip] = chat_history[ip][-MAX_HISTORY:]
+####    TIME    ####
+def otro_esta_inactivo(history: list, timeout=20) -> bool:
+    """
+    Si el último mensaje del otro fue hace más de timeout segundos,
+    consideramos que está inactivo.
+    """
+    import time
 
+    for msg in reversed(history):
+        if msg.get("role") == "user":
+            ts = msg.get("timestamp", 0)
+            return (time.time() - ts) > timeout
+
+    return False
+####    FIN    ####
 # Función: devuelve el estado actual de una conversación
-async def get_chat_status(ip: str) -> str:
-    await ensure_chat(ip)
-    async with lock:
+def get_chat_status(ip: str) -> str:
+    ensure_chat(ip)
+    with lock:
         return chat_status.get(ip, "chatting")
 
 # Función: devuelve cuántos mensajes hay en el historial de un chat
-async def get_history_length(ip: str) -> int:
-    await ensure_chat(ip)
-    async with lock:
+def get_history_length(ip: str) -> int:
+    ensure_chat(ip)
+    with lock:
         return len(chat_history.get(ip, []))
 
 # Función: limpia toda la información asociada a un chat
-async def clear_chat(ip: str):
-    async with lock:
+def clear_chat(ip: str):
+    with lock:
         chat_history.pop(ip, None)
         chat_status.pop(ip, None)
         post_objects.pop(ip, None)
+        retry_counts.pop(ip, None)
