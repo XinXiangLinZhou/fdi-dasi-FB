@@ -21,3 +21,5 @@ post_objects = {}
 
 # Lock global: evita conflictos entre hilos al acceder a datos compartidos
 lock = asyncio.Lock()
+
+retry_counts = {}
