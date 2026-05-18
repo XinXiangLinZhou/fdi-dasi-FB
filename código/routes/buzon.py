@@ -17,7 +17,8 @@ from services.ollama_agent import (
 router = APIRouter()
 
 
-# Endpoint principal: recibe mensajes de otros agentes y genera una respuesta automática
+# Centralizar aquí la recepción permite controlar mejor
+# toda interacción externa antes de responder.
 @router.post("/buzon")
 async def buzon(request: Request, mensaje: Mensaje):
     client_ip = request.client.host
@@ -26,24 +27,28 @@ async def buzon(request: Request, mensaje: Mensaje):
     logger.info(f"IP: {client_ip}")
     logger.info(f"mensaje: {texto_recibido}")
 
-    # Actualizar estado de conexión del agente que envía el mensaje
+    # Actualizamos conexión para trabajar con estado real
+    # y saber qué agentes siguen activos.
     async with lock:
         ip_time[client_ip] = now
         list_ping.discard(client_ip)
 
-    # Guardar mensaje recibido en el historial
+    # Guardar contexto mejora coherencia
+    # y evita respuestas desconectadas.
     await ensure_chat(client_ip)
     await add_history(client_ip, "user", texto_recibido)
 
-    # Comprobar si la conversación sigue activa
+    # Verificar estado evita continuar conversaciones
+    # que ya terminaron o no son válidas.
     status = await get_chat_status(client_ip)
     if status != "chatting":
         return {"status": status}
 
-    # Generar respuesta usando el modelo (Ollama)
+    # Delegamos la decisión al modelo para automatizar
+    # respuestas sin lógica rígida.
     respuesta = await generar_respuesta_ollama(client_ip)
 
-    # Caso 1: respuesta de texto normal
+    # Respuesta conversacional normal
     if respuesta.get("type") == "text":
         respuesta_texto = respuesta["content"]
         await add_history(client_ip, "assistant", respuesta_texto)
@@ -55,14 +60,16 @@ async def buzon(request: Request, mensaje: Mensaje):
             "response": result
         }
 
-    # Caso 2: llamada a herramienta (intercambio)
+    # Las tool_calls se controlan más estrictamente
+    # porque implican acciones con impacto real.
     if respuesta["type"] == "tool_call":
         tool_calls = respuesta["tool_calls"]
 
         if not tool_calls:
             return {"status": "error", "msg": "tool_calls vacío"}
 
-        #Evita ejecución de tools no autorizadas
+        # Restringimos herramientas para evitar
+        # ejecuciones no previstas o inseguras.
         function_name = tool_calls[0].get("function", {}).get("name")
         if function_name != "finish_trade":
             return {
@@ -83,4 +90,6 @@ async def buzon(request: Request, mensaje: Mensaje):
             "trade": tool_result.get("trade")
         }
 
+    # Este control final evita que formatos inesperados
+    # rompan el flujo del sistema.
     return {"status": "error", "msg": "respuesta no válida de Ollama"}

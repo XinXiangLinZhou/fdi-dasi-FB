@@ -1,25 +1,30 @@
 # Estado global compartido entre diferentes módulos del sistema
 import asyncio
 
-# Diccionario: guarda la última vez que cada IP respondió
+# Centralizamos aquí la información para que todos los módulos
+# trabajen con los mismos datos y evitar desorden o duplicados.
 ip_time = {}
 
-# Conjunto: lista de IPs activas conocidas en el sistema
+# Guardamos solo IPs activas para saber rápidamente qué agentes
+# siguen disponibles dentro de la red.
 list_ip = set()
 
-# Conjunto: IPs pendientes de verificación (ping)
+# Separar las IPs pendientes permite controlar mejor
+# cuáles necesitan comprobación sin repetir procesos.
 list_ping = set()
 
-# Diccionario: historial de conversación por IP
+# Mantener historial ayuda a que cada conversación tenga contexto
+# y no parezca que el agente responde desde cero cada vez.
 chat_history = {}
 
-# Diccionario: estado de cada conversación (chatting, success, etc.)
+# Este estado permite tomar decisiones según la fase de interacción
+# y evita comportamientos incoherentes.
 chat_status = {}
 
-# Diccionario: almacena intercambios realizados o pendientes
+# Registramos intercambios para hacer seguimiento y evitar
+# perder operaciones importantes o repetirlas.
 post_objects = {}
 
-# Lock global: evita conflictos entre hilos al acceder a datos compartidos
+# El lock protege los datos compartidos cuando varias tareas
+# intentan modificarlos al mismo tiempo.
 lock = asyncio.Lock()
-
-retry_counts = {}

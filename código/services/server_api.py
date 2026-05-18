@@ -2,8 +2,13 @@
 from app.config import SERVER_URL, MY_ALIAS, logger
 import httpx
 
+# Mantener un cliente reutilizable mejora eficiencia
+# y evita crear conexiones nuevas constantemente.
 client = httpx.AsyncClient(timeout=10.0)
-# Función: registra el alias del agente en el servidor si aún no existe
+
+
+# Registrarse permite que el agente exista oficialmente dentro del sistema
+# y pueda interactuar con el resto desde el principio.
 async def postName():
     try:
         await client.post(f"{SERVER_URL}alias/{MY_ALIAS}")
@@ -11,7 +16,8 @@ async def postName():
         logger.error(f"Error en postName: {e}")
 
 
-# Función: obtiene toda la información global del servidor (recursos, objetivos, etc.)
+# Consultamos información global para tomar decisiones
+# basadas en el estado real del entorno.
 async def getInfo():
     try:
         r = await client.get(f"{SERVER_URL}info")
@@ -21,7 +27,8 @@ async def getInfo():
         return {}
 
 
-# Función: obtiene un diccionario alias -> IP de todos los agentes
+# Tener acceso a alias e IPs facilita localizar agentes
+# sin depender de datos manuales o fijos.
 async def getGente():
     try:
         r = await client.get(f"{SERVER_URL}gente")
@@ -32,7 +39,8 @@ async def getGente():
         return {}
 
 
-# Función: obtiene un diccionario IP -> alias
+# Esta versión inversa ayuda cuando primero conocemos la IP
+# y necesitamos identificar rápidamente al agente.
 async def getGenteAlias():
     try:
         r = await client.get(f"{SERVER_URL}gente")
@@ -43,7 +51,8 @@ async def getGenteAlias():
         return {}
 
 
-# Función: envía un objeto (mensaje/paquete) a otro agente usando su IP
+# Enviar objetos mediante alias reduce errores
+# y mantiene la comunicación más organizada.
 async def postObject(ip, obj):
     gente_alias = await getGenteAlias()
     alias = gente_alias.get(ip)
@@ -58,6 +67,9 @@ async def postObject(ip, obj):
             json=obj
         )
         return r.json()
+
+    # Gestionamos fallos para que problemas externos
+    # no bloqueen el flujo general del sistema.
     except Exception as e:
         logger.error(f"Error en postObject hacia {alias}: {e}")
         return None
