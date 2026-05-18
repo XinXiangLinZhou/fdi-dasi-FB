@@ -50,16 +50,6 @@ ollama run ministral-3:8B
 uv run run.py
 ```
 
-## Estructura
-```Bash
-app/
-├── routes/
-├── services/
-├── config.py
-├── state.py
-run.py
-```
-
 # Miembros
 	- JIAHUI YOU
 	- XIN XIANG LIN ZHOU
