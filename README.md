@@ -1,36 +1,65 @@
-Para la ejecución del sistema es necesario:
+# Sistema Inteligente de Intercambio de Recursos con IA (OLLAMA)
 
-- Disponer de Python instalado.
+## Descripción
 
-- Tener configurado uv para la gestión de dependencias.
+Este proyecto implementa un sistema multi-agente basado en IA que permite la negociación automática de recursos entre jugadores en un entorno distribuido.
 
-- Contar con el servidor del juego en funcionamiento.
+El sistema utiliza FastAPI para la comunicación entre agentes y Ollama para la generación de respuestas mediante un modelo de lenguaje local.
 
-- Tener Ollama instalado y ejecutando el modelo seleccionado.
+---
 
-- Disponer de conectividad entre los jugadores.
+## Funcionamiento
 
-Pasos básicos de ejecución:
+1. El agente recibe mensajes de otros jugadores.
+2. Se actualiza el historial de conversación.
+3. Se consulta el estado del juego.
+4. El modelo de IA genera una respuesta o una acción.
+5. Si existe un acuerdo válido, se ejecuta el intercambio.
+6. El resultado se envía al servidor del juego.
 
-- Iniciar el servidor del juego.
+---
 
-- Cambiar ip del servidor en código/app/config.py en esta linea del código
+## Tecnologías
 
-        SERVER_URL = os.getenv("SERVER_URL", "http://147.96.81.252:7719/")
+- Python
+- FastAPI
+- Ollama
+- HTTPX
+- Asyncio
+- JSON
 
-- Ejecutar Ollama con el modelo correspondiente.
+---
 
-        bin/ollama run ministral-3:8B
-    
-- Lanzar la aplicación FastAPI entrando carpeta código.
+## Ejecución
 
-        uv run run.py
-    
-- Verificar el registro del agente.
+### 1. Configurar servidor
 
-- Iniciar la interacción entre jugadores.
+En `app/config.py`:
 
+```Bash
+SERVER_URL = "http://147.96.80.104:7719/"
+```
 
-Miembros: JIAHUI YOU, XIN XIANG LIN ZHOU.
+### 2. Iniciar modelo en Ollama
+```Bash
+ollama run ministral-3:8B
+```
 
+### 3. Ejecutar el sistema
+```Bash
+uv run run.py
+```
 
+## Estructura
+```Bash
+app/
+├── routes/
+├── services/
+├── config.py
+├── state.py
+run.py
+```
+
+# Miembros
+	- JIAHUI YOU
+	- XIN XIANG LIN ZHOU
